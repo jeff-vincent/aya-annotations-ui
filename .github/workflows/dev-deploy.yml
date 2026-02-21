@@ -28,19 +28,6 @@ jobs:
 
       # -- Build all images --
 
-      - name: Patch backend Dockerfile for Kaniko
-        shell: bash
-        run: |
-          cd ${{ github.workspace }}/backend
-          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
-
-      - name: Build backend image
-        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
-        with:
-          name: backend
-          context: ${{ github.workspace }}/backend
-          image: "${{ env.REGISTRY }}/backend:${{ env.TAG }}"
-
       - name: Patch frontend Dockerfile for Kaniko
         shell: bash
         run: |
@@ -53,6 +40,19 @@ jobs:
           name: frontend
           context: ${{ github.workspace }}/frontend
           image: "${{ env.REGISTRY }}/frontend:${{ env.TAG }}"
+
+      - name: Patch backend Dockerfile for Kaniko
+        shell: bash
+        run: |
+          cd ${{ github.workspace }}/backend
+          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
+
+      - name: Build backend image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: backend
+          context: ${{ github.workspace }}/backend
+          image: "${{ env.REGISTRY }}/backend:${{ env.TAG }}"
 
       - name: Patch daily job Dockerfile for Kaniko
         shell: bash
@@ -82,13 +82,13 @@ jobs:
           dockerfile: jobs/weekly/Dockerfile
           image: "${{ env.REGISTRY }}/weekly-job:${{ env.TAG }}"
 
-      - name: Patch by-language job Dockerfile for Kaniko
+      - name: Patch by language job Dockerfile for Kaniko
         shell: bash
         run: |
           cd ${{ github.workspace }}/backend
           sed -i 's/poetry install/poetry install --no-root/g' jobs/by_language/Dockerfile
 
-      - name: Build by-language job image
+      - name: Build by language job image
         uses: jeff-vincent/kindling/.github/actions/kindling-build@main
         with:
           name: by-language-job
@@ -130,7 +130,7 @@ jobs:
             - name: INSTRUCT_MULTILINGUAL_APP_DB_URI
               valueFrom:
                 secretKeyRef:
-                  name: kindling-secret-db-uri
+                  name: kindling-secret-instruct-multilingual-app-db-uri
                   key: value
             - name: JWT_SECRET
               valueFrom:
@@ -141,28 +141,14 @@ jobs:
               value: "HS256"
             - name: JWT_EXPIRATION_TIME
               value: "3600"
-            - name: DISCORD_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-discord-client-id
-                  key: value
-            - name: DISCORD_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-discord-client-secret
-                  key: value
-            - name: GOOGLE_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-google-client-id
-                  key: value
-            - name: GOOGLE_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-google-client-secret
-                  key: value
-          # Requires: kindling secrets set <NAME> <VALUE>
-          # NOTE: OAuth detected — run 'kindling expose' for a public HTTPS URL
+            - name: FRONTEND_URL
+              value: "http://${{ github.actor }}-frontend:4000"
+            - name: FOR_AI_URL
+              value: "http://${{ github.actor }}-frontend:4000"
+          replicas: 1
+          service-type: ClusterIP
+          ingress-class: nginx
+          wait: true
 
       - name: Deploy frontend
         uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
@@ -171,7 +157,6 @@ jobs:
           image: "${{ env.REGISTRY }}/frontend:${{ env.TAG }}"
           port: "80"
           health-check-path: "/"
-          ingress-host: "${{ github.actor }}-frontend.localhost"
           labels: |
             app.kubernetes.io/part-of: aya-annotations-ui
             app.kubernetes.io/component: frontend
@@ -179,6 +164,11 @@ jobs:
           env: |
             - name: BACKEND_URL
               value: "http://${{ github.actor }}-backend:8080"
+          ingress-host: "${{ github.actor }}-frontend.localhost"
+          replicas: 1
+          service-type: ClusterIP
+          ingress-class: nginx
+          wait: true
 
       - name: Deploy daily leaderboard job
         uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
@@ -193,6 +183,10 @@ jobs:
             apps.example.com/github-username: ${{ github.actor }}
           dependencies: |
             - type: postgres
+          replicas: 1
+          service-type: ClusterIP
+          ingress-class: nginx
+          wait: true
 
       - name: Deploy weekly leaderboard job
         uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
@@ -207,8 +201,12 @@ jobs:
             apps.example.com/github-username: ${{ github.actor }}
           dependencies: |
             - type: postgres
+          replicas: 1
+          service-type: ClusterIP
+          ingress-class: nginx
+          wait: true
 
-      - name: Deploy by-language leaderboard job
+      - name: Deploy by language leaderboard job
         uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
         with:
           name: "${{ github.actor }}-by-language-job"
@@ -221,6 +219,10 @@ jobs:
             apps.example.com/github-username: ${{ github.actor }}
           dependencies: |
             - type: postgres
+          replicas: 1
+          service-type: ClusterIP
+          ingress-class: nginx
+          wait: true
 
       - name: Deploy overall leaderboard job
         uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
@@ -235,3 +237,9 @@ jobs:
             apps.example.com/github-username: ${{ github.actor }}
           dependencies: |
             - type: postgres
+          replicas: 1
+          service-type: ClusterIP
+          ingress-class: nginx
+          wait: true
+
+      # NOTE: OAuth detected — run 'kindling expose' for a public HTTPS URL
