@@ -27,6 +27,12 @@ jobs:
                 /builds/*.yaml /builds/*.sh
 
       # -- Build all images --
+      - name: Patch backend Dockerfile for Kaniko
+        shell: bash
+        run: |
+          cd ${{ github.workspace }}/backend
+          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
+
       - name: Build backend image
         uses: jeff-vincent/kindling/.github/actions/kindling-build@main
         with:
@@ -34,44 +40,64 @@ jobs:
           context: ${{ github.workspace }}/backend
           image: "${{ env.REGISTRY }}/backend:${{ env.TAG }}"
 
+      - name: Patch by_language job Dockerfile for Kaniko
+        shell: bash
+        run: |
+          cd ${{ github.workspace }}/backend/jobs/by_language
+          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
+
+      - name: Build by_language job image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: by-language-job
+          context: ${{ github.workspace }}/backend/jobs/by_language
+          image: "${{ env.REGISTRY }}/by-language-job:${{ env.TAG }}"
+
+      - name: Patch daily job Dockerfile for Kaniko
+        shell: bash
+        run: |
+          cd ${{ github.workspace }}/backend/jobs/daily
+          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
+
+      - name: Build daily job image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: daily-job
+          context: ${{ github.workspace }}/backend/jobs/daily
+          image: "${{ env.REGISTRY }}/daily-job:${{ env.TAG }}"
+
+      - name: Patch overall job Dockerfile for Kaniko
+        shell: bash
+        run: |
+          cd ${{ github.workspace }}/backend/jobs/overall
+          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
+
+      - name: Build overall job image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: overall-job
+          context: ${{ github.workspace }}/backend/jobs/overall
+          image: "${{ env.REGISTRY }}/overall-job:${{ env.TAG }}"
+
+      - name: Patch weekly job Dockerfile for Kaniko
+        shell: bash
+        run: |
+          cd ${{ github.workspace }}/backend/jobs/weekly
+          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
+
+      - name: Build weekly job image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: weekly-job
+          context: ${{ github.workspace }}/backend/jobs/weekly
+          image: "${{ env.REGISTRY }}/weekly-job:${{ env.TAG }}"
+
       - name: Build frontend image
         uses: jeff-vincent/kindling/.github/actions/kindling-build@main
         with:
           name: frontend
           context: ${{ github.workspace }}/frontend
           image: "${{ env.REGISTRY }}/frontend:${{ env.TAG }}"
-
-      - name: Build daily leaderboard job image
-        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
-        with:
-          name: daily-leaderboard-job
-          context: ${{ github.workspace }}/backend
-          image: "${{ env.REGISTRY }}/daily-leaderboard-job:${{ env.TAG }}"
-          exclude: "./jobs/weekly ./jobs/by_language ./jobs/overall"
-
-      - name: Build weekly leaderboard job image
-        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
-        with:
-          name: weekly-leaderboard-job
-          context: ${{ github.workspace }}/backend
-          image: "${{ env.REGISTRY }}/weekly-leaderboard-job:${{ env.TAG }}"
-          exclude: "./jobs/daily ./jobs/by_language ./jobs/overall"
-
-      - name: Build by language leaderboard job image
-        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
-        with:
-          name: by-language-leaderboard-job
-          context: ${{ github.workspace }}/backend
-          image: "${{ env.REGISTRY }}/by-language-leaderboard-job:${{ env.TAG }}"
-          exclude: "./jobs/daily ./jobs/weekly ./jobs/overall"
-
-      - name: Build overall leaderboard job image
-        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
-        with:
-          name: overall-leaderboard-job
-          context: ${{ github.workspace }}/backend
-          image: "${{ env.REGISTRY }}/overall-leaderboard-job:${{ env.TAG }}"
-          exclude: "./jobs/daily ./jobs/weekly ./jobs/by_language"
 
       # -- Deploy in dependency order --
       - name: Deploy backend
@@ -86,62 +112,72 @@ jobs:
             app.kubernetes.io/part-of: aya-annotations-ui
             app.kubernetes.io/component: backend
             apps.example.com/github-username: ${{ github.actor }}
-          dependencies: |
-            - type: postgres
           env: |
             - name: INSTRUCT_MULTILINGUAL_APP_DB_URI
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-instruct-multilingual-app-db-uri
-                  key: value
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-jwt-secret
-                  key: value
-            - name: JWT_ALGORITHM
-              value: "HS256"
-            - name: JWT_EXPIRATION_TIME
-              value: "3600"
-            - name: DISCORD_API_BASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-discord-api-base-url
-                  key: value
-            - name: DISCORD_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-discord-client-id
-                  key: value
-            - name: DISCORD_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-discord-client-secret
-                  key: value
-            - name: DISCORD_REDIRECT_URI
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-discord-redirect-uri
-                  key: value
-            - name: GOOGLE_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-google-client-id
-                  key: value
-            - name: GOOGLE_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-google-client-secret
-                  key: value
-            - name: GOOGLE_REDIRECT_URI
-              valueFrom:
-                secretKeyRef:
-                  name: kindling-secret-google-redirect-uri
-                  key: value
-            - name: FRONTEND_URL
-              value: "http://${{ github.actor }}-frontend.localhost"
-            - name: FOR_AI_URL
-              value: "http://${{ github.actor }}-frontend.localhost"
+              value: "postgres://backendapp:password@${{ github.actor }}-db-postgres:5432/instruct_multilingual"
+          dependencies: |
+            - type: postgres
+              version: "14"
+
+      - name: Deploy by_language job
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-by-language-job"
+          image: "${{ env.REGISTRY }}/by-language-job:${{ env.TAG }}"
+          port: "8080"
+          ingress-host: "${{ github.actor }}-by-language-job.localhost"
+          labels: |
+            app.kubernetes.io/part-of: aya-annotations-ui
+            app.kubernetes.io/component: by-language-job
+            apps.example.com/github-username: ${{ github.actor }}
+          dependencies: |
+            - type: postgres
+              version: "14"
+
+      - name: Deploy daily job
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-daily-job"
+          image: "${{ env.REGISTRY }}/daily-job:${{ env.TAG }}"
+          port: "8080"
+          ingress-host: "${{ github.actor }}-daily-job.localhost"
+          labels: |
+            app.kubernetes.io/part-of: aya-annotations-ui
+            app.kubernetes.io/component: daily-job
+            apps.example.com/github-username: ${{ github.actor }}
+          dependencies: |
+            - type: postgres
+              version: "14"
+
+      - name: Deploy overall job
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-overall-job"
+          image: "${{ env.REGISTRY }}/overall-job:${{ env.TAG }}"
+          port: "8080"
+          ingress-host: "${{ github.actor }}-overall-job.localhost"
+          labels: |
+            app.kubernetes.io/part-of: aya-annotations-ui
+            app.kubernetes.io/component: overall-job
+            apps.example.com/github-username: ${{ github.actor }}
+          dependencies: |
+            - type: postgres
+              version: "14"
+
+      - name: Deploy weekly job
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-weekly-job"
+          image: "${{ env.REGISTRY }}/weekly-job:${{ env.TAG }}"
+          port: "8080"
+          ingress-host: "${{ github.actor }}-weekly-job.localhost"
+          labels: |
+            app.kubernetes.io/part-of: aya-annotations-ui
+            app.kubernetes.io/component: weekly-job
+            apps.example.com/github-username: ${{ github.actor }}
+          dependencies: |
+            - type: postgres
+              version: "14"
 
       - name: Deploy frontend
         uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
@@ -158,56 +194,13 @@ jobs:
             - name: BACKEND_URL
               value: "http://${{ github.actor }}-backend:8080"
           ingress-host: "${{ github.actor }}-frontend.localhost"
-          # NOTE: OAuth detected — run 'kindling expose' for a public HTTPS URL
 
-      - name: Deploy daily leaderboard job
-        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
-        with:
-          name: "${{ github.actor }}-daily-leaderboard-job"
-          image: "${{ env.REGISTRY }}/daily-leaderboard-job:${{ env.TAG }}"
-          port: "8080"
-          labels: |
-            app.kubernetes.io/part-of: aya-annotations-ui
-            app.kubernetes.io/component: daily-leaderboard-job
-            apps.example.com/github-username: ${{ github.actor }}
-          dependencies: |
-            - type: postgres
-
-      - name: Deploy weekly leaderboard job
-        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
-        with:
-          name: "${{ github.actor }}-weekly-leaderboard-job"
-          image: "${{ env.REGISTRY }}/weekly-leaderboard-job:${{ env.TAG }}"
-          port: "8080"
-          labels: |
-            app.kubernetes.io/part-of: aya-annotations-ui
-            app.kubernetes.io/component: weekly-leaderboard-job
-            apps.example.com/github-username: ${{ github.actor }}
-          dependencies: |
-            - type: postgres
-
-      - name: Deploy by language leaderboard job
-        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
-        with:
-          name: "${{ github.actor }}-by-language-leaderboard-job"
-          image: "${{ env.REGISTRY }}/by-language-leaderboard-job:${{ env.TAG }}"
-          port: "8080"
-          labels: |
-            app.kubernetes.io/part-of: aya-annotations-ui
-            app.kubernetes.io/component: by-language-leaderboard-job
-            apps.example.com/github-username: ${{ github.actor }}
-          dependencies: |
-            - type: postgres
-
-      - name: Deploy overall leaderboard job
-        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
-        with:
-          name: "${{ github.actor }}-overall-leaderboard-job"
-          image: "${{ env.REGISTRY }}/overall-leaderboard-job:${{ env.TAG }}"
-          port: "8080"
-          labels: |
-            app.kubernetes.io/part-of: aya-annotations-ui
-            app.kubernetes.io/component: overall-leaderboard-job
-            apps.example.com/github-username: ${{ github.actor }}
-          dependencies: |
-            - type: postgres
+      - name: Summary
+        run: |
+          echo "🎉 Deploy complete!"
+          echo "🌐 Frontend: http://${{ github.actor }}-frontend.localhost"
+          echo "🌐 Backend: http://${{ github.actor }}-backend.localhost"
+          echo "🌐 By Language Job: http://${{ github.actor }}-by-language-job.localhost"
+          echo "🌐 Daily Job: http://${{ github.actor }}-daily-job.localhost"
+          echo "🌐 Overall Job: http://${{ github.actor }}-overall-job.localhost"
+          echo "🌐 Weekly Job: http://${{ github.actor }}-weekly-job.localhost"
