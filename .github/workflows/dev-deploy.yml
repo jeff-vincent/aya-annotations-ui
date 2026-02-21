@@ -1,0 +1,213 @@
+name: Dev Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: "registry:5000"
+  TAG: "${{ github.actor }}-${{ github.sha }}"
+
+jobs:
+  build-and-deploy:
+    runs-on: [self-hosted, "${{ github.actor }}"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Clean builds directory
+        shell: bash
+        run: |
+          rm -f /builds/*.done /builds/*.request /builds/*.processing \
+                /builds/*.apply /builds/*.apply-done /builds/*.apply-log \
+                /builds/*.apply-exitcode /builds/*.exitcode \
+                /builds/*.log /builds/*.dest /builds/*.tar.gz \
+                /builds/*.yaml /builds/*.sh
+
+      # -- Build all images --
+      - name: Build backend image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: backend
+          context: ${{ github.workspace }}/backend
+          image: "${{ env.REGISTRY }}/backend:${{ env.TAG }}"
+
+      - name: Build frontend image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: frontend
+          context: ${{ github.workspace }}/frontend
+          image: "${{ env.REGISTRY }}/frontend:${{ env.TAG }}"
+
+      - name: Build daily leaderboard job image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: daily-leaderboard-job
+          context: ${{ github.workspace }}/backend
+          image: "${{ env.REGISTRY }}/daily-leaderboard-job:${{ env.TAG }}"
+          exclude: "./jobs/weekly ./jobs/by_language ./jobs/overall"
+
+      - name: Build weekly leaderboard job image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: weekly-leaderboard-job
+          context: ${{ github.workspace }}/backend
+          image: "${{ env.REGISTRY }}/weekly-leaderboard-job:${{ env.TAG }}"
+          exclude: "./jobs/daily ./jobs/by_language ./jobs/overall"
+
+      - name: Build by language leaderboard job image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: by-language-leaderboard-job
+          context: ${{ github.workspace }}/backend
+          image: "${{ env.REGISTRY }}/by-language-leaderboard-job:${{ env.TAG }}"
+          exclude: "./jobs/daily ./jobs/weekly ./jobs/overall"
+
+      - name: Build overall leaderboard job image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: overall-leaderboard-job
+          context: ${{ github.workspace }}/backend
+          image: "${{ env.REGISTRY }}/overall-leaderboard-job:${{ env.TAG }}"
+          exclude: "./jobs/daily ./jobs/weekly ./jobs/by_language"
+
+      # -- Deploy in dependency order --
+      - name: Deploy backend
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-backend"
+          image: "${{ env.REGISTRY }}/backend:${{ env.TAG }}"
+          port: "8080"
+          ingress-host: "${{ github.actor }}-backend.localhost"
+          health-check-path: "/actuator/health"
+          labels: |
+            app.kubernetes.io/part-of: aya-annotations-ui
+            app.kubernetes.io/component: backend
+            apps.example.com/github-username: ${{ github.actor }}
+          dependencies: |
+            - type: postgres
+          env: |
+            - name: INSTRUCT_MULTILINGUAL_APP_DB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: kindling-secret-instruct-multilingual-app-db-uri
+                  key: value
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kindling-secret-jwt-secret
+                  key: value
+            - name: JWT_ALGORITHM
+              value: "HS256"
+            - name: JWT_EXPIRATION_TIME
+              value: "3600"
+            - name: DISCORD_API_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: kindling-secret-discord-api-base-url
+                  key: value
+            - name: DISCORD_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: kindling-secret-discord-client-id
+                  key: value
+            - name: DISCORD_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kindling-secret-discord-client-secret
+                  key: value
+            - name: DISCORD_REDIRECT_URI
+              valueFrom:
+                secretKeyRef:
+                  name: kindling-secret-discord-redirect-uri
+                  key: value
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: kindling-secret-google-client-id
+                  key: value
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kindling-secret-google-client-secret
+                  key: value
+            - name: GOOGLE_REDIRECT_URI
+              valueFrom:
+                secretKeyRef:
+                  name: kindling-secret-google-redirect-uri
+                  key: value
+            - name: FRONTEND_URL
+              value: "http://${{ github.actor }}-frontend.localhost"
+            - name: FOR_AI_URL
+              value: "http://${{ github.actor }}-frontend.localhost"
+
+      - name: Deploy frontend
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-frontend"
+          image: "${{ env.REGISTRY }}/frontend:${{ env.TAG }}"
+          port: "80"
+          health-check-path: "/"
+          labels: |
+            app.kubernetes.io/part-of: aya-annotations-ui
+            app.kubernetes.io/component: frontend
+            apps.example.com/github-username: ${{ github.actor }}
+          env: |
+            - name: BACKEND_URL
+              value: "http://${{ github.actor }}-backend:8080"
+          ingress-host: "${{ github.actor }}-frontend.localhost"
+          # NOTE: OAuth detected — run 'kindling expose' for a public HTTPS URL
+
+      - name: Deploy daily leaderboard job
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-daily-leaderboard-job"
+          image: "${{ env.REGISTRY }}/daily-leaderboard-job:${{ env.TAG }}"
+          port: "8080"
+          labels: |
+            app.kubernetes.io/part-of: aya-annotations-ui
+            app.kubernetes.io/component: daily-leaderboard-job
+            apps.example.com/github-username: ${{ github.actor }}
+          dependencies: |
+            - type: postgres
+
+      - name: Deploy weekly leaderboard job
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-weekly-leaderboard-job"
+          image: "${{ env.REGISTRY }}/weekly-leaderboard-job:${{ env.TAG }}"
+          port: "8080"
+          labels: |
+            app.kubernetes.io/part-of: aya-annotations-ui
+            app.kubernetes.io/component: weekly-leaderboard-job
+            apps.example.com/github-username: ${{ github.actor }}
+          dependencies: |
+            - type: postgres
+
+      - name: Deploy by language leaderboard job
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-by-language-leaderboard-job"
+          image: "${{ env.REGISTRY }}/by-language-leaderboard-job:${{ env.TAG }}"
+          port: "8080"
+          labels: |
+            app.kubernetes.io/part-of: aya-annotations-ui
+            app.kubernetes.io/component: by-language-leaderboard-job
+            apps.example.com/github-username: ${{ github.actor }}
+          dependencies: |
+            - type: postgres
+
+      - name: Deploy overall leaderboard job
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-overall-leaderboard-job"
+          image: "${{ env.REGISTRY }}/overall-leaderboard-job:${{ env.TAG }}"
+          port: "8080"
+          labels: |
+            app.kubernetes.io/part-of: aya-annotations-ui
+            app.kubernetes.io/component: overall-leaderboard-job
+            apps.example.com/github-username: ${{ github.actor }}
+          dependencies: |
+            - type: postgres
