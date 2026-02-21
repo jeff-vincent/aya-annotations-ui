@@ -27,6 +27,7 @@ jobs:
                 /builds/*.yaml /builds/*.sh
 
       # -- Build all images --
+
       - name: Patch backend Dockerfile for Kaniko
         shell: bash
         run: |
@@ -40,57 +41,61 @@ jobs:
           context: ${{ github.workspace }}/backend
           image: "${{ env.REGISTRY }}/backend:${{ env.TAG }}"
 
-      - name: Patch by_language job Dockerfile for Kaniko
-        shell: bash
-        run: |
-          cd ${{ github.workspace }}/backend/jobs/by_language
-          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
-
-      - name: Build by_language job image
-        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
-        with:
-          name: by-language-job
-          context: ${{ github.workspace }}/backend/jobs/by_language
-          image: "${{ env.REGISTRY }}/by-language-job:${{ env.TAG }}"
-
       - name: Patch daily job Dockerfile for Kaniko
         shell: bash
         run: |
-          cd ${{ github.workspace }}/backend/jobs/daily
-          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
+          cd ${{ github.workspace }}/backend
+          sed -i 's/poetry install/poetry install --no-root/g' jobs/daily/Dockerfile
 
       - name: Build daily job image
         uses: jeff-vincent/kindling/.github/actions/kindling-build@main
         with:
           name: daily-job
-          context: ${{ github.workspace }}/backend/jobs/daily
+          context: ${{ github.workspace }}/backend
+          dockerfile: jobs/daily/Dockerfile
           image: "${{ env.REGISTRY }}/daily-job:${{ env.TAG }}"
-
-      - name: Patch overall job Dockerfile for Kaniko
-        shell: bash
-        run: |
-          cd ${{ github.workspace }}/backend/jobs/overall
-          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
-
-      - name: Build overall job image
-        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
-        with:
-          name: overall-job
-          context: ${{ github.workspace }}/backend/jobs/overall
-          image: "${{ env.REGISTRY }}/overall-job:${{ env.TAG }}"
 
       - name: Patch weekly job Dockerfile for Kaniko
         shell: bash
         run: |
-          cd ${{ github.workspace }}/backend/jobs/weekly
-          sed -i 's/poetry install/poetry install --no-root/g' Dockerfile
+          cd ${{ github.workspace }}/backend
+          sed -i 's/poetry install/poetry install --no-root/g' jobs/weekly/Dockerfile
 
       - name: Build weekly job image
         uses: jeff-vincent/kindling/.github/actions/kindling-build@main
         with:
           name: weekly-job
-          context: ${{ github.workspace }}/backend/jobs/weekly
+          context: ${{ github.workspace }}/backend
+          dockerfile: jobs/weekly/Dockerfile
           image: "${{ env.REGISTRY }}/weekly-job:${{ env.TAG }}"
+
+      - name: Patch by language job Dockerfile for Kaniko
+        shell: bash
+        run: |
+          cd ${{ github.workspace }}/backend
+          sed -i 's/poetry install/poetry install --no-root/g' jobs/by_language/Dockerfile
+
+      - name: Build by language job image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: by-language-job
+          context: ${{ github.workspace }}/backend
+          dockerfile: jobs/by_language/Dockerfile
+          image: "${{ env.REGISTRY }}/by-language-job:${{ env.TAG }}"
+
+      - name: Patch overall job Dockerfile for Kaniko
+        shell: bash
+        run: |
+          cd ${{ github.workspace }}/backend
+          sed -i 's/poetry install/poetry install --no-root/g' jobs/overall/Dockerfile
+
+      - name: Build overall job image
+        uses: jeff-vincent/kindling/.github/actions/kindling-build@main
+        with:
+          name: overall-job
+          context: ${{ github.workspace }}/backend
+          dockerfile: jobs/overall/Dockerfile
+          image: "${{ env.REGISTRY }}/overall-job:${{ env.TAG }}"
 
       - name: Build frontend image
         uses: jeff-vincent/kindling/.github/actions/kindling-build@main
@@ -100,6 +105,7 @@ jobs:
           image: "${{ env.REGISTRY }}/frontend:${{ env.TAG }}"
 
       # -- Deploy in dependency order --
+
       - name: Deploy backend
         uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
         with:
@@ -108,76 +114,52 @@ jobs:
           port: "8080"
           ingress-host: "${{ github.actor }}-backend.localhost"
           health-check-path: "/actuator/health"
-          labels: |
-            app.kubernetes.io/part-of: aya-annotations-ui
-            app.kubernetes.io/component: backend
-            apps.example.com/github-username: ${{ github.actor }}
-          env: |
-            - name: INSTRUCT_MULTILINGUAL_APP_DB_URI
-              value: "postgres://backendapp:password@${{ github.actor }}-db-postgres:5432/instruct_multilingual"
           dependencies: |
             - type: postgres
-              version: "14"
-
-      - name: Deploy by_language job
-        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
-        with:
-          name: "${{ github.actor }}-by-language-job"
-          image: "${{ env.REGISTRY }}/by-language-job:${{ env.TAG }}"
-          port: "8080"
-          ingress-host: "${{ github.actor }}-by-language-job.localhost"
-          labels: |
-            app.kubernetes.io/part-of: aya-annotations-ui
-            app.kubernetes.io/component: by-language-job
-            apps.example.com/github-username: ${{ github.actor }}
-          dependencies: |
-            - type: postgres
-              version: "14"
+          # Requires: kindling secrets set DB_USER <VALUE>
+          # Requires: kindling secrets set DB_PASS <VALUE>
+          # Requires: kindling secrets set DB_NAME <VALUE>
+          # NOTE: OAuth detected — run 'kindling expose' for a public HTTPS URL
 
       - name: Deploy daily job
         uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
         with:
           name: "${{ github.actor }}-daily-job"
           image: "${{ env.REGISTRY }}/daily-job:${{ env.TAG }}"
-          port: "8080"
+          port: "80"
           ingress-host: "${{ github.actor }}-daily-job.localhost"
-          labels: |
-            app.kubernetes.io/part-of: aya-annotations-ui
-            app.kubernetes.io/component: daily-job
-            apps.example.com/github-username: ${{ github.actor }}
           dependencies: |
             - type: postgres
-              version: "14"
-
-      - name: Deploy overall job
-        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
-        with:
-          name: "${{ github.actor }}-overall-job"
-          image: "${{ env.REGISTRY }}/overall-job:${{ env.TAG }}"
-          port: "8080"
-          ingress-host: "${{ github.actor }}-overall-job.localhost"
-          labels: |
-            app.kubernetes.io/part-of: aya-annotations-ui
-            app.kubernetes.io/component: overall-job
-            apps.example.com/github-username: ${{ github.actor }}
-          dependencies: |
-            - type: postgres
-              version: "14"
 
       - name: Deploy weekly job
         uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
         with:
           name: "${{ github.actor }}-weekly-job"
           image: "${{ env.REGISTRY }}/weekly-job:${{ env.TAG }}"
-          port: "8080"
+          port: "80"
           ingress-host: "${{ github.actor }}-weekly-job.localhost"
-          labels: |
-            app.kubernetes.io/part-of: aya-annotations-ui
-            app.kubernetes.io/component: weekly-job
-            apps.example.com/github-username: ${{ github.actor }}
           dependencies: |
             - type: postgres
-              version: "14"
+
+      - name: Deploy by language job
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-by-language-job"
+          image: "${{ env.REGISTRY }}/by-language-job:${{ env.TAG }}"
+          port: "80"
+          ingress-host: "${{ github.actor }}-by-language-job.localhost"
+          dependencies: |
+            - type: postgres
+
+      - name: Deploy overall job
+        uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
+        with:
+          name: "${{ github.actor }}-overall-job"
+          image: "${{ env.REGISTRY }}/overall-job:${{ env.TAG }}"
+          port: "80"
+          ingress-host: "${{ github.actor }}-overall-job.localhost"
+          dependencies: |
+            - type: postgres
 
       - name: Deploy frontend
         uses: jeff-vincent/kindling/.github/actions/kindling-deploy@main
@@ -186,21 +168,14 @@ jobs:
           image: "${{ env.REGISTRY }}/frontend:${{ env.TAG }}"
           port: "80"
           health-check-path: "/"
-          labels: |
-            app.kubernetes.io/part-of: aya-annotations-ui
-            app.kubernetes.io/component: frontend
-            apps.example.com/github-username: ${{ github.actor }}
+          ingress-host: "${{ github.actor }}-frontend.localhost"
           env: |
             - name: BACKEND_URL
               value: "http://${{ github.actor }}-backend:8080"
-          ingress-host: "${{ github.actor }}-frontend.localhost"
+          # NOTE: OAuth detected — run 'kindling expose' for a public HTTPS URL
 
       - name: Summary
         run: |
           echo "🎉 Deploy complete!"
           echo "🌐 Frontend: http://${{ github.actor }}-frontend.localhost"
           echo "🌐 Backend: http://${{ github.actor }}-backend.localhost"
-          echo "🌐 By Language Job: http://${{ github.actor }}-by-language-job.localhost"
-          echo "🌐 Daily Job: http://${{ github.actor }}-daily-job.localhost"
-          echo "🌐 Overall Job: http://${{ github.actor }}-overall-job.localhost"
-          echo "🌐 Weekly Job: http://${{ github.actor }}-weekly-job.localhost"
